@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -117,6 +118,27 @@ class MainActivity : AppCompatActivity() {
     // Processes the result returned by GPay / UPI app after payment
     private fun handleUpiResult(result: ActivityResult) {
         val data = result.data
+
+        // ── DIAGNOSTIC LOGGING — remove after HDFC + FedMobile test confirmed ──
+        // Run one real ₹1 payment via HDFC Bank app AND Federal Bank app,
+        // then check Logcat (tag "UpiResult") to confirm:
+        //   (a) the exact extra key names each app uses
+        //   (b) whether values need Uri.decode() (look for %XX sequences)
+        // Before removing this block, update the parser below with real key names.
+        if (data != null) {
+            val bundle = data.extras
+            if (bundle != null) {
+                Log.d("UpiResult", "=== UPI result extras (${bundle.size()} keys) ===")
+                for (key in bundle.keySet()) {
+                    Log.d("UpiResult", "  key=\"$key\"  value=\"${bundle.get(key)}\"")
+                }
+            } else {
+                Log.d("UpiResult", "=== UPI result: Intent had no extras ===")
+            }
+        } else {
+            Log.d("UpiResult", "=== UPI result: Intent data was null (resultCode=${result.resultCode}) ===")
+        }
+        // ── END DIAGNOSTIC LOGGING ──
 
         // UPI apps return result in Intent extras
         // Key names vary slightly between apps — check both cases

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Camera captures stored in the app's external cache dir
+         (e.g. /sdcard/Android/data/co.relishfoods.approvals/cache/) -->
+    <external-cache-path name="camera_captures" path="." />
+
+    <!-- Files stored in internal cache (fallback when external storage unavailable) -->
+    <cache-path name="internal_cache" path="." />
+</paths>

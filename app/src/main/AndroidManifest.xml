@@ -26,6 +26,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Required on Android 7+ to pass captured image URIs to the WebView
+             (camera intent returns a content:// URI via FileProvider, not a file:// URI) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="co.relishfoods.approvals.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>
