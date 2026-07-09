@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var initialPageLoaded = false
 
     // Registers the UPI Intent launcher and handles the result
     private val upiLauncher =
@@ -63,6 +64,15 @@ class MainActivity : AppCompatActivity() {
                     }
                     // Keep all other URLs inside the WebView
                     else -> false
+                }
+            }
+
+            // Handle share intent after the initial page load is complete.
+            // Only fires once — subsequent navigations are ignored.
+            override fun onPageFinished(view: WebView, url: String) {
+                if (!initialPageLoaded) {
+                    initialPageLoaded = true
+                    handleShareIntent(intent)
                 }
             }
         }
@@ -172,6 +182,76 @@ class MainActivity : AppCompatActivity() {
                 null
             )
         }
+    }
+
+    // Handles shares when the app is already running (foreground or background).
+    // Android calls onNewIntent instead of onCreate for a singleTask activity.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    // Reads a shared file (image or PDF) from a bank/UPI app, base64-encodes it,
+    // and injects it into the WebView via window.onReceiptShared().
+    private fun handleShareIntent(intent: Intent) {
+        if (intent.action != Intent.ACTION_SEND) return
+        val mimeType = intent.type ?: return
+        if (!mimeType.startsWith("image/") && mimeType != "application/pdf") return
+
+        val uri: Uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        } ?: return
+
+        // Read on a background thread — never on main thread
+        Thread {
+            try {
+                // Resolve display name (bank apps use content:// URIs)
+                var fileName = "receipt"
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val col = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && col >= 0) fileName = cursor.getString(col) ?: "receipt"
+                }
+
+                val inputStream = contentResolver.openInputStream(uri) ?: return@Thread
+                val bytes = inputStream.readBytes()
+                inputStream.close()
+
+                // Base64 chars are [A-Za-z0-9+/=] — safe to embed in a JS string.
+                // Only the fileName needs sanitisation.
+                val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val safeMime = mimeType.replace("'", "")
+                val safeName = fileName.replace("\\", "").replace("'", "").replace("\"", "")
+
+                // Build the JS call
+                val js = """
+                    (function() {
+                        if (typeof window.onReceiptShared === 'function') {
+                            // App is ready — dispatch immediately
+                            window.onReceiptShared({
+                                mimeType: '$safeMime',
+                                base64Data: '$base64',
+                                fileName: '$safeName'
+                            });
+                        } else {
+                            // App still loading (cold start) — stash for when it registers
+                            window._pendingSharedReceipt = {
+                                mimeType: '$safeMime',
+                                base64Data: '$base64',
+                                fileName: '$safeName'
+                            };
+                        }
+                    })();
+                """.trimIndent()
+
+                runOnUiThread { webView.evaluateJavascript(js, null) }
+            } catch (e: Exception) {
+                android.util.Log.e("RelishApprovals", "Share intent handling failed: ${e.message}")
+            }
+        }.start()
     }
 
     // Handle Android back button — go back in WebView history
